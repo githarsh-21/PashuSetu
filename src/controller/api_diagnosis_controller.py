@@ -1,0 +1,137 @@
+import os
+import io
+import logging
+from PIL import Image, UnidentifiedImageError
+
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi.responses import Response, FileResponse
+
+from src.service.diagnosis_service import DiagnosisService
+from src.payload.diagnosis_payload import DiagnosisRequest
+from src.repositories.user_repository import UserRepository
+from src.util.pdf_util import PDFReportUtil
+
+router = APIRouter(prefix="/api/diagnosis", tags=["React AI Diagnosis"])
+
+diagnosis_service = DiagnosisService()
+user_repo = UserRepository()
+logger = logging.getLogger(__name__)
+
+
+def normalize_language_code(language: str) -> str:
+    """Normalizes any incoming language label or locale to a 2-letter ISO code."""
+    if not language:
+        return "en"
+    # pyrefly: ignore [unnecessary-type-conversion]
+    lang_lower = str(language).lower().strip()
+    if "marathi" in lang_lower or lang_lower.startswith("mr"):
+        return "mr"
+    if "hindi" in lang_lower or lang_lower.startswith("hi"):
+        return "hi"
+    if "telugu" in lang_lower or lang_lower.startswith("te"):
+        return "te"
+    return "en"
+
+
+@router.post("/triage")
+async def react_ai_triage(
+    username: str = Form(...),
+    tag: str = Form(...),
+    language: str = Form("en"),
+    image: UploadFile = File(...)
+):
+    try:
+        image_bytes = await image.read()
+        if not image_bytes:
+            raise HTTPException(status_code=400, detail="Uploaded image file is empty.")
+
+        try:
+            pil_image = Image.open(io.BytesIO(image_bytes))
+            # Convert RGBA/P palette modes to RGB for model compatibility
+            if pil_image.mode != "RGB":
+                pil_image = pil_image.convert("RGB")
+        except UnidentifiedImageError:
+            raise HTTPException(status_code=400, detail="Invalid or unsupported image file format.")
+
+        lang_code = normalize_language_code(language)
+        request = DiagnosisRequest(image=pil_image, language=lang_code)
+        response = diagnosis_service.diagnose_cattle(request)
+
+        if response and response.success:
+            cattle_tag = tag.strip().upper() if tag else "GENERAL-PATIENT"
+            disease_prediction = getattr(response, 'disease_prediction', 'Suspected Illness')
+
+            user = user_repo.search_farmer(username)
+            pincode = user.get("pincode", "000000") if (user and isinstance(user, dict)) else "000000"
+
+            user_repo.save_diagnosis_record(
+                username, cattle_tag, pincode, disease_prediction, lang_code, response.report
+            )
+            return {"success": True, "report": response.report}
+        else:
+            return {"success": False, "report": "AI Triage failed to generate a diagnostic response."}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Triage Error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Diagnostic service failed: {str(e)}")
+
+
+@router.post("/download-pdf")
+async def react_download_pdf(
+    username: str = Form(...),
+    tag: str = Form(...),
+    language: str = Form("en"),
+    report_text: str = Form(...),
+    image: UploadFile = File(None)
+):
+    try:
+        user = user_repo.search_farmer(username)
+        full_name = user['full_name'] if (user and isinstance(user, dict) and 'full_name' in user) else username
+        cattle_tag = tag.strip().upper() if tag else "GENERAL"
+        lang_code = normalize_language_code(language)
+
+        pil_image = None
+        if image is not None:
+            image_bytes = await image.read()
+            if image_bytes:
+                try:
+                    pil_image = Image.open(io.BytesIO(image_bytes))
+                    if pil_image.mode != "RGB":
+                        pil_image = pil_image.convert("RGB")
+                except UnidentifiedImageError:
+                    pil_image = None
+
+        pdf_result = PDFReportUtil.generate_pdf(
+            farmer_name=full_name,
+            cattle_tag=cattle_tag,
+            language=lang_code,
+            report_text=report_text,
+            image=pil_image
+        )
+
+        # Handles whether PDFReportUtil returns raw bytes or a disk file path
+        if isinstance(pdf_result, (bytes, bytearray)):
+            return Response(
+                # pyrefly: ignore [unnecessary-type-conversion]
+                content=bytes(pdf_result),
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": f'attachment; filename="PashuSetu_Report_{cattle_tag}.pdf"'
+                }
+            )
+        elif isinstance(pdf_result, str) and os.path.exists(pdf_result):
+            return FileResponse(
+                path=pdf_result,
+                filename=os.path.basename(pdf_result),
+                media_type="application/pdf"
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Invalid output generated by PDF utility.")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"PDF Gen Error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"PDF Generation Error: {str(e)}")

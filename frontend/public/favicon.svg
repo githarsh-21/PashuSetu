@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <rect width="512" height="512" rx="128" fill="#0f172a"/>
+  <circle cx="256" cy="256" r="190" fill="#059669"/>
+  <circle cx="256" cy="256" r="160" fill="#0f172a"/>
+  <!-- Veterinary Triage Cross -->
+  <rect x="226" y="146" width="60" height="220" rx="16" fill="#34d399"/>
+  <rect x="146" y="226" width="220" height="60" rx="16" fill="#34d399"/>
+  <!-- Cattle Horn Arcs -->
+  <path d="M 140 210 C 130 140, 200 110, 230 130" fill="none" stroke="#f8fafc" stroke-width="24" stroke-linecap="round"/>
+  <path d="M 372 210 C 382 140, 312 110, 282 130" fill="none" stroke="#f8fafc" stroke-width="24" stroke-linecap="round"/>
+</svg>
