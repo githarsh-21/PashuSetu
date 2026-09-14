@@ -10,6 +10,7 @@ import MilkAnalytics from './components/MilkAnalytics';
 import SplashScreen from './components/SplashScreen';
 import UserProfileModal from './components/UserProfileModal';
 import VetDashboard from './components/VetDashboard';
+import AdminDashboard from './components/AdminDashboard';
 import { PlusCircle, List, Sparkles, Landmark, TrendingUp, AlertTriangle, Download } from 'lucide-react';
 
 export default function App() {
@@ -122,7 +123,8 @@ export default function App() {
       setUser(loggedUser);
       localStorage.setItem('pashusetu_user', JSON.stringify(loggedUser));
     } catch (err) {
-      setAuthError(err.response?.data?.detail || 'Invalid username or password');
+      // 👇 CHANGED: Now using i18next translation key!
+      setAuthError(t('err_invalid_login', 'Invalid username or password.'));
     }
   };
 
@@ -420,7 +422,9 @@ export default function App() {
       )}
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 w-full flex-1">
-        {user.role?.toLowerCase() === 'veterinarian' ? (
+        {user.role?.toLowerCase() === 'admin' ? (
+          <AdminDashboard user={user} />
+        ) : user.role?.toLowerCase() === 'veterinarian' ? (
           <VetDashboard user={user} />
         ) : (
           <>

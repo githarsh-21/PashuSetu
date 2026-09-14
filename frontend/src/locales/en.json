@@ -461,6 +461,15 @@
         "Initiate Ring Vaccination within 5km radius. Inform APMC to halt trade.": "Initiate Ring Vaccination within 5km radius. Inform APMC to halt trade.",
         "Isolate affected cattle & disinfect feeding troughs.": "Isolate affected cattle & disinfect feeding troughs.",
         "Vector control (mosquito/tick). Administer goat pox vaccine in 5km radius.": "Vector control (mosquito/tick). Administer goat pox vaccine in 5km radius.",
-        "Quarantine sick animals. Apply anti-fly sprays.": "Quarantine sick animals. Apply anti-fly sprays."
+        "Quarantine sick animals. Apply anti-fly sprays.": "Quarantine sick animals. Apply anti-fly sprays.",
+        "err_invalid_login": "Invalid username or password.",
+        "role_admin": "System Admin",
+        "admin_title": "Admin Command Center",
+        "admin_subtitle": "Manage Users and Monitor Outbreaks.",
+        "tab_user_directory": "User Directory",
+        "lbl_role": "Role",
+        "lbl_contact": "Contact",
+        "lbl_location_pin": "Location (PIN)",
+        "lbl_license_vets": "License (Vets)"
     }
 }

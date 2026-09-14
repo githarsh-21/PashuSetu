@@ -463,6 +463,15 @@
         "Vector control (mosquito/tick). Administer goat pox vaccine in 5km radius.": "वेक्टर नियंत्रण (मच्छर/टिक)। 5 किमी के दायरे में गोट पॉक्स का टीका लगाएं।",
         "Quarantine sick animals. Apply anti-fly sprays.": "बीमार जानवरों को क्वारंटाइन करें। एंटी-फ्लाई स्प्रे का प्रयोग करें।",
         "Available specifically to farmers in Maharashtra.": "विशेष रूप से महाराष्ट्र के किसानों के लिए उपलब्ध।",
-        "Available specifically to farmers in Andhra Pradesh.": "विशेष रूप से आंध्र प्रदेश के किसानों के लिए उपलब्ध।"
+        "Available specifically to farmers in Andhra Pradesh.": "विशेष रूप से आंध्र प्रदेश के किसानों के लिए उपलब्ध।",
+        "err_invalid_login": "❌ अमान्य उपयोगकर्ता नाम या पासवर्ड।",
+        "role_admin": "सिस्टम एडमिन",
+        "admin_title": "एडमिन कमांड सेंटर",
+        "admin_subtitle": "उपयोगकर्ताओं का प्रबंधन करें और बीमारी के प्रकोप की निगरानी करें।",
+        "tab_user_directory": "उपयोगकर्ता निर्देशिका",
+        "lbl_role": "भूमिका",
+        "lbl_contact": "संपर्क",
+        "lbl_location_pin": "स्थान (पिन)",
+        "lbl_license_vets": "लाइसेंस (पशु चिकित्सक)"
     }
 }
