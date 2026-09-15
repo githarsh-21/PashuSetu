@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import API from '../services/api';
-import { Users, Activity, ShieldCheck } from 'lucide-react';
-import { useTranslation } from 'react-i18next'; // 👈 1. IMPORT TRANSLATION HOOK
+import { Users, Activity, ShieldCheck, Download } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export default function AdminDashboard({ user }) {
-    const { t } = useTranslation(); // 👈 2. INITIALIZE TRANSLATION FUNCTION
+    const { t } = useTranslation();
 
     const [activeTab, setActiveTab] = useState('radar');
     const [outbreakData, setOutbreakData] = useState({ active_clusters: [] });
     const [users, setUsers] = useState([]);
+
+    // 1. ADDED: State to hold our top KPI numbers
+    const [kpiStats, setKpiStats] = useState({ farmers: 0, vets: 0, cattle: 0, diagnoses: 0 });
 
     useEffect(() => {
         fetchData();
@@ -16,15 +19,48 @@ export default function AdminDashboard({ user }) {
 
     const fetchData = async () => {
         try {
-            const [outbreakRes, usersRes] = await Promise.all([
+            // 2. ADDED: Fetch stats concurrently with the other data
+            const [outbreakRes, usersRes, statsRes] = await Promise.all([
                 API.get('/admin/outbreak-radar'),
                 API.get('/admin/users'),
+                API.get('/admin/stats/admin') // Assuming "admin" is the username, adjust if needed
             ]);
+
             setOutbreakData(outbreakRes.data);
             setUsers(usersRes.data.users);
+
+            if (statsRes.data && statsRes.data.status === "success") {
+                setKpiStats(statsRes.data.stats);
+            }
         } catch (error) {
             console.error("Error fetching admin data:", error);
         }
+    };
+
+    // 3. ADDED: CSV Export Logic
+    const exportToCSV = () => {
+        const headers = ["Full Name", "Role", "Contact", "Location (PIN)", "License (VETS)"];
+        const csvRows = [headers.join(",")];
+
+        users.forEach(user => {
+            const row = [
+                `"${user.full_name || user.username}"`,
+                `"${user.role}"`,
+                `"${user.phone || 'N/A'}"`,
+                `"${user.pincode || 'N/A'}"`,
+                `"${user.license_no || '-'}"`
+            ];
+            csvRows.push(row.join(","));
+        });
+
+        const csvContent = "data:text/csv;charset=utf-8," + csvRows.join("\n");
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "PashuSetu_User_Directory.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     };
 
     return (
@@ -34,7 +70,7 @@ export default function AdminDashboard({ user }) {
                 <div>
                     <h1 className="text-2xl font-black flex items-center gap-2">
                         <ShieldCheck className="w-6 h-6 text-emerald-400" />
-                        {t('admin_title', 'Admin Command Center')} {/* 👈 TRANSLATED */}
+                        {t('admin_title', 'Admin Command Center')}
                     </h1>
                     <p className="text-slate-400 text-sm mt-1">
                         {t('admin_subtitle', 'Manage Users and Monitor Outbreaks.')}
@@ -42,16 +78,51 @@ export default function AdminDashboard({ user }) {
                 </div>
             </div>
 
-            {/* Tabs */}
-            <div className="flex space-x-2 border-b border-slate-200 pb-2 overflow-x-auto">
-                <button onClick={() => setActiveTab('radar')} className={`flex items-center gap-2 px-4 py-2 font-bold rounded-xl transition ${activeTab === 'radar' ? 'bg-rose-100 text-rose-800' : 'text-slate-500 hover:bg-slate-100'}`}>
-                    <Activity className="w-4 h-4" />
-                    {t('tab_outbreak_radar', 'Outbreak Radar')}
-                </button>
-                <button onClick={() => setActiveTab('users')} className={`flex items-center gap-2 px-4 py-2 font-bold rounded-xl transition ${activeTab === 'users' ? 'bg-emerald-100 text-emerald-800' : 'text-slate-500 hover:bg-slate-100'}`}>
-                    <Users className="w-4 h-4" />
-                    {t('tab_user_directory', 'User Directory')}
-                </button>
+            {/* 4. ADDED: KPI Stat Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+                    <span className="text-slate-500 text-xs font-bold uppercase tracking-wider">{t('kpi_farmers', 'Total Farmers')}</span>
+                    <span className="text-3xl font-black text-slate-800 mt-1">{kpiStats.farmers}</span>
+                </div>
+
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+                    <span className="text-slate-500 text-xs font-bold uppercase tracking-wider">{t('kpi_vets', 'Registered Vets')}</span>
+                    <span className="text-3xl font-black text-emerald-600 mt-1">{kpiStats.vets}</span>
+                </div>
+
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+                    <span className="text-slate-500 text-xs font-bold uppercase tracking-wider">{t('kpi_cattle', 'Tagged Cattle')}</span>
+                    <span className="text-3xl font-black text-blue-600 mt-1">{kpiStats.cattle}</span>
+                </div>
+
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+                    <span className="text-slate-500 text-xs font-bold uppercase tracking-wider">{t('kpi_diagnoses', 'AI Diagnoses')}</span>
+                    <span className="text-3xl font-black text-rose-600 mt-1">{kpiStats.diagnoses}</span>
+                </div>
+            </div>
+
+            {/* Tabs & Export Button Container */}
+            <div className="flex justify-between items-center border-b border-slate-200 pb-2 overflow-x-auto">
+                <div className="flex space-x-2">
+                    <button onClick={() => setActiveTab('radar')} className={`flex items-center gap-2 px-4 py-2 font-bold rounded-xl transition ${activeTab === 'radar' ? 'bg-rose-100 text-rose-800' : 'text-slate-500 hover:bg-slate-100'}`}>
+                        <Activity className="w-4 h-4" />
+                        {t('tab_outbreak_radar', 'Outbreak Radar')}
+                    </button>
+                    <button onClick={() => setActiveTab('users')} className={`flex items-center gap-2 px-4 py-2 font-bold rounded-xl transition ${activeTab === 'users' ? 'bg-emerald-100 text-emerald-800' : 'text-slate-500 hover:bg-slate-100'}`}>
+                        <Users className="w-4 h-4" />
+                        {t('tab_user_directory', 'User Directory')}
+                    </button>
+                </div>
+
+                {/* 5. ADDED: CSV Export Button (Only visible on Users tab) */}
+                {activeTab === 'users' && (
+                    <button
+                        onClick={exportToCSV}
+                        className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white font-semibold py-2 px-4 rounded-lg shadow-sm text-sm transition-all">
+                        <Download className="w-4 h-4" />
+                        {t('btn_export_csv', 'Export CSV')}
+                    </button>
+                )}
             </div>
 
             {/* TAB 1: Outbreak Radar */}
