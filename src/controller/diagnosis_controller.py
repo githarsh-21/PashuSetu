@@ -161,7 +161,8 @@ class DiagnosisController:
             )
             
             # pyrefly: ignore [missing-attribute]
-            if "INVALID" in response.text.upper():
+            resp_text = response.text or ""
+            if "INVALID" in resp_text.upper():
                 return "❌ KYC Rejected: The uploaded document does not appear to be a valid medical or veterinary license."
         except Exception as e:
             return f"⚠️ KYC System Error: {str(e)}"

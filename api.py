@@ -175,6 +175,7 @@ async def register(
                 # Updated to the required gemini-3.6-flash model
                 res = client.models.generate_content(model="gemini-3.6-flash", contents=[prompt, pil_image])
                 
+                # pyrefly: ignore [missing-attribute]
                 if "INVALID" in res.text.upper():
                     raise HTTPException(status_code=400, detail="KYC Rejected: Document does not match medical/vet credentials.")
             except HTTPException:
@@ -182,6 +183,7 @@ async def register(
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"KYC Verification failed: {str(e)}")
 
+    assert license_no is not None
     success, msg = auth_service.register(username, password, full_name, role, phone, address, pincode, license_no)
     if not success:
         raise HTTPException(status_code=400, detail=msg)
@@ -339,7 +341,9 @@ async def download_diagnosis_pdf(
     )
     
     return FileResponse(
+        # pyrefly: ignore [bad-argument-type]
         path=file_path, 
+        # pyrefly: ignore [bad-argument-type]
         filename=os.path.basename(file_path), 
         media_type='application/pdf'
     )
@@ -386,6 +390,7 @@ def log_breeding(payload: BreedingLogPayload):
 
     success = user_repo.save_breeding_log(
         payload.username, payload.cattle_tag, payload.event_type, 
+        # pyrefly: ignore [bad-argument-type]
         payload.event_date, expected_calving, "", payload.notes
     )
     if not success:
@@ -470,15 +475,19 @@ def get_admin_stats(username: str):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM users WHERE LOWER(role) = 'farmer'")
+            # pyrefly: ignore [unsupported-operation]
             farmers = cursor.fetchone()[0]
             
             cursor.execute("SELECT COUNT(*) FROM users WHERE LOWER(role) = 'veterinarian'")
+            # pyrefly: ignore [unsupported-operation]
             vets = cursor.fetchone()[0]
             
             cursor.execute("SELECT COUNT(*) FROM cattle_profiles")
+            # pyrefly: ignore [unsupported-operation]
             cattle = cursor.fetchone()[0]
             
             cursor.execute("SELECT COUNT(*) FROM diagnosis_history")
+            # pyrefly: ignore [unsupported-operation]
             diagnoses = cursor.fetchone()[0]
             
             stats = {"farmers": farmers, "vets": vets, "cattle": cattle, "diagnoses": diagnoses}

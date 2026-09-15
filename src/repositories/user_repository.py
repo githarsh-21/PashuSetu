@@ -9,17 +9,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- The "Two Worlds" Switch ---
-# Try to get the variable from Render (checking both names to be safe)
-live_db_url = os.getenv("DATABASE_URL") or os.getenv("DB_URL")
+# Safely fetch the variable from Render's environment
+DB_URL = os.environ.get("DATABASE_URL") or os.environ.get("DB_URL")
 
-if live_db_url:
+if DB_URL and "localhost" not in DB_URL:
     # We found the Render cloud variable! Strip hidden spaces just in case.
-    DB_URL = live_db_url.strip()
+    DB_URL = DB_URL.strip()
     print("✅ SUCCESS: Found Cloud Database URL!")
 else:
-    # Fall back to local pgAdmin database.
+    # Fall back to local pgAdmin database for local laptop development.
     DB_URL = "postgresql://postgres:Pass%40123@localhost:5432/pashusetu_db"
-    print("⚠️ WARNING: No cloud URL found in Render! Falling back to localhost.")
+    print("⚠️ WARNING: No cloud URL found or localhost detected! Falling back to local DB.")
     
 @contextmanager
 def get_db_connection():
@@ -300,11 +300,13 @@ class UserRepository:
     def search_farmer(self, query: str) -> Optional[dict]:
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
+                # Upgraded to use LIKE for partial searches!
+                search_term = f"%{query.strip()}%"
                 cursor.execute(
                     """SELECT username, full_name, phone, address, pincode 
                        FROM users 
-                       WHERE (LOWER(username) = LOWER(%s) OR phone = %s) AND LOWER(role) = 'farmer'""",
-                    (query.strip(), query.strip())
+                       WHERE (LOWER(username) LIKE LOWER(%s) OR phone LIKE %s) AND LOWER(role) = 'farmer'""",
+                    (search_term, search_term)
                 )
                 row = cursor.fetchone()
                 if row:
