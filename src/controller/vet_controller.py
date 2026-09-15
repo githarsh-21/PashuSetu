@@ -1,8 +1,17 @@
+import os
 from datetime import datetime, timedelta
 import psycopg2
 
-# Database connection safely copied from your user_repository
-DB_URL = "postgresql://postgres:Pass%40123@localhost:5432/pashusetu_db"
+# --- The "Two Worlds" Switch ---
+# Safely fetch the variable from Render's environment
+DB_URL = os.environ.get("DATABASE_URL") or os.environ.get("DB_URL")
+
+if DB_URL and "localhost" not in DB_URL:
+    DB_URL = DB_URL.strip()
+    print("✅ SUCCESS: Vet Controller connected to Cloud Database!")
+else:
+    DB_URL = "postgresql://postgres:Pass%40123@localhost:5432/pashusetu_db"
+    print("⚠️ WARNING: Vet Controller found no cloud URL! Falling back to local DB.")
 
 def get_db_connection():
     """Creates a standard connection for the vet controller."""
