@@ -420,7 +420,7 @@
         "msg_already_account": "क्या आपके पास पहले से खाता है?",
         "btn_log_in": "लॉग इन करें",
         "msg_mock_sms": "📲 डमी SMS: आपका पशुसेतु सत्यापन कोड है",
-        "lbl_cattle_tag_ear_id": "मवेशी टैग / ईयर आईडी",
+        "lbl_cattle_tag": "मवेशी टैग / ईयर आईडी",
         "badge_active_zones": "सक्रिय प्रकोप क्षेत्र",
         "badge_active_outbreak": "सक्रिय प्रकोप",
         "ACTIVE OUTBREAK": "सक्रिय प्रकोप",
