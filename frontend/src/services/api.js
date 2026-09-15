@@ -1,8 +1,7 @@
 import axios from 'axios';
 
-// Use relative URL in development to let Vite's proxy forward /api to FastAPI.
-// Falls back to an environment variable in production or local 8000.
-const baseURL = import.meta.env.VITE_API_URL || '/api';
+// Use environment variable if set, otherwise fallback to the live Render backend
+const baseURL = import.meta.env.VITE_API_URL || 'https://pashusetu-backend-14uk.onrender.com';
 
 const API = axios.create({
     baseURL,
