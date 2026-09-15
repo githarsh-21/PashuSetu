@@ -37,12 +37,12 @@ app = FastAPI(title="PashuSetu API", version="2.0")
 # 1. CORS Updated for React/Vite local network testing (Mobile PWA testing)
 origins = [
     "http://localhost:5173", # For local testing
-    "https://pashu-setu-one.vercel.app" # <-- Add your live Vercel URL here!
+    "https://pashu-setu-one.vercel.app" # <-- Your live Vercel URL
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=origins, # <-- FIX: Use the 'origins' list variable here!
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
