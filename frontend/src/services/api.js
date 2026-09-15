@@ -1,11 +1,11 @@
 import axios from 'axios';
 
 // Use environment variable if set, otherwise fallback to the live Render backend
-const baseURL = import.meta.env.VITE_API_URL || 'https://pashusetu-backend-14uk.onrender.com';
+const baseURL = import.meta.env.VITE_API_URL || 'https://pashusetu-backend-14uk.onrender.com/api';
 
 const API = axios.create({
     baseURL,
-    timeout: 90000, // 30-second timeout for ML inference and image uploads
+    timeout: 90000, // 90-second timeout for ML inference and image uploads
 });
 
 // Request Interceptor: Attach authentication token or headers if needed
