@@ -35,6 +35,11 @@ from src.util.pdf_util import PDFReportUtil
 app = FastAPI(title="PashuSetu API", version="2.0")
 
 # 1. CORS Updated for React/Vite local network testing (Mobile PWA testing)
+origins = [
+    "http://localhost:5173", # For local testing
+    "https://pashu-setu-one.vercel.app" # <-- Add your live Vercel URL here!
+]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -176,7 +181,7 @@ async def register(
                 raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"KYC Verification failed: {str(e)}")
-                
+
     success, msg = auth_service.register(username, password, full_name, role, phone, address, pincode, license_no)
     if not success:
         raise HTTPException(status_code=400, detail=msg)
