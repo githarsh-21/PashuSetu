@@ -1,27 +1,26 @@
 from fastapi import APIRouter, HTTPException
 import psycopg2
-from typing import List, Optional
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-router = APIRouter(prefix="/admin", tags=["Admin Dashboard"])
+# THE FIX: Added "/api" to the prefix so the React frontend can find it!
+router = APIRouter(prefix="/api/admin", tags=["Admin Dashboard"])
+
+# --- The "Two Worlds" Switch ---
+DB_URL = os.environ.get("DATABASE_URL") or os.environ.get("DB_URL")
+
+if DB_URL and "localhost" not in DB_URL:
+    DB_URL = DB_URL.strip()
+    print("✅ SUCCESS: Admin Controller connected to Cloud Database!")
+else:
+    DB_URL = "postgresql://postgres:Pass%40123@localhost:5432/pashusetu_db"
+    print("⚠️ WARNING: Admin Controller found no cloud URL! Falling back to local DB.")
 
 def get_db_connection():
-    # 1. Check if we have a live Cloud URL in .env
-    db_url = os.getenv("DATABASE_URL")
-    if db_url:
-        return psycopg2.connect(db_url)
-    
-    # 2. Otherwise, fall back to your local laptop database
-    return psycopg2.connect(
-        dbname="pashusetu_db",
-        user="postgres",
-        password=os.getenv("DB_PASSWORD", "admin123"),
-        host="localhost",
-        port="5432"
-    )
+    """Creates a standard connection for the Admin controller."""
+    return psycopg2.connect(DB_URL)
 
 # --- 1. EPIDEMIOLOGICAL OUTBREAK RADAR ---
 @router.get("/outbreak-radar")
@@ -30,7 +29,6 @@ def get_outbreak_radar():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
-                # Adapted from your SQLite blueprint to PostgreSQL syntax
                 cursor.execute("""
                     SELECT pincode, disease_name, COUNT(*) as case_count
                     FROM diagnosis_history
@@ -56,6 +54,7 @@ def get_outbreak_radar():
                 
                 return {"active_clusters": clusters}
     except Exception as e:
+        print("Admin Outbreak Error:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -68,7 +67,7 @@ def get_all_users():
                 cursor.execute("""
                     SELECT id, username, full_name, role, phone, pincode, license_no 
                     FROM users 
-                    ORDER BY role, created_at DESC
+                    ORDER BY role, id DESC
                 """)
                 rows = cursor.fetchall()
                 users = []
@@ -79,4 +78,5 @@ def get_all_users():
                     })
                 return {"users": users}
     except Exception as e:
+        print("Admin Users Error:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
