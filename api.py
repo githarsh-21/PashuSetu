@@ -167,14 +167,16 @@ async def register(
                     "Examine this image. Is it a legitimate doctor ID, medical license, or Veterinary Council "
                     "certificate? Reply exactly VALID or INVALID."
                 )
-                res = client.models.generate_content(model="gemini-2.5-flash", contents=[prompt, pil_image])
+                # Updated to the required gemini-3.6-flash model
+                res = client.models.generate_content(model="gemini-3.6-flash", contents=[prompt, pil_image])
+                
                 if "INVALID" in res.text.upper():
                     raise HTTPException(status_code=400, detail="KYC Rejected: Document does not match medical/vet credentials.")
             except HTTPException:
                 raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"KYC Verification failed: {str(e)}")
-
+                
     success, msg = auth_service.register(username, password, full_name, role, phone, address, pincode, license_no)
     if not success:
         raise HTTPException(status_code=400, detail=msg)
