@@ -9,10 +9,16 @@ load_dotenv()
 router = APIRouter(prefix="/admin", tags=["Admin Dashboard"])
 
 def get_db_connection():
+    # 1. Check if we have a live Cloud URL in .env
+    db_url = os.getenv("DATABASE_URL")
+    if db_url:
+        return psycopg2.connect(db_url)
+    
+    # 2. Otherwise, fall back to your local laptop database
     return psycopg2.connect(
         dbname="pashusetu_db",
         user="postgres",
-        password=os.getenv("DB_PASSWORD", "admin123"), # Ensure your password is correct
+        password=os.getenv("DB_PASSWORD", "admin123"),
         host="localhost",
         port="5432"
     )

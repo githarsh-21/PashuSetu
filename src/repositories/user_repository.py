@@ -1,13 +1,26 @@
+import os
 import psycopg2
 from psycopg2 import IntegrityError
 from typing import List, Optional
 from src.model.diagnosis_entity import User
 from contextlib import contextmanager
+from dotenv import load_dotenv
 
-# ⚠️ IMPORTANT: Replace 'YOUR_PASSWORD' with your actual pgAdmin master password
-DB_URL = "postgresql://postgres:Pass%40123@localhost:5432/pashusetu_db"
+load_dotenv()
 
+# --- The "Two Worlds" Switch ---
+# Try to get the variable from Render (checking both names to be safe)
+live_db_url = os.getenv("DATABASE_URL") or os.getenv("DB_URL")
 
+if live_db_url:
+    # We found the Render cloud variable! Strip hidden spaces just in case.
+    DB_URL = live_db_url.strip()
+    print("✅ SUCCESS: Found Cloud Database URL!")
+else:
+    # Fall back to local pgAdmin database.
+    DB_URL = "postgresql://postgres:Pass%40123@localhost:5432/pashusetu_db"
+    print("⚠️ WARNING: No cloud URL found in Render! Falling back to localhost.")
+    
 @contextmanager
 def get_db_connection():
     """Safely manages PostgreSQL connections to prevent leaks."""

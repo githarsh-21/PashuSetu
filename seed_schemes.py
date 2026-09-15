@@ -29,7 +29,7 @@ def seed_all_schemes():
             "Conservation and genetic development of indigenous and desi bovine breeds.",
             1, "Indigenous", "Any", "Any", "All",
             "Subsidized high-genetic merit semen doses, IVF support, and breed conservation incentives.",
-            "Register or rear indigenous Indian breeds (e.g., Gir, Sahiwal, Red Sindhi, Tharparkar, Kankrej) to qualify."
+            "Register or rear indigenous Indian breeds (e.g., Gir, Sahiwal, uvRed Sindhi, Tharparkar, Kankrej) to qualify."
         ),
         (
             "Animal Husbandry Infrastructure Development Fund (AHIDF)",
