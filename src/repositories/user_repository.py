@@ -121,8 +121,9 @@ class UserRepository:
                         UNIQUE(username, cattle_tag)
                     )
                 """)
-                # Safely upgrade existing database tables to include gender
+                # Safely upgrade existing database tables to include gender and our new Soft Delete flag!
                 cursor.execute("ALTER TABLE cattle_profiles ADD COLUMN IF NOT EXISTS gender TEXT DEFAULT 'Female';")
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;")
                 
                 # 7. Vet Consultations table
                 cursor.execute("""
@@ -185,7 +186,6 @@ class UserRepository:
         except Exception: 
             return False
 
-    # Add this method to user_repository.py to prevent duplicate key errors
     def add_cattle_profile(self, username: str, cattle_tag: str, breed: str, gender: str, date_of_birth: str) -> bool:
         try:
             with get_db_connection() as conn:
@@ -218,7 +218,7 @@ class UserRepository:
                 )
                 row = cursor.fetchone()
                 if row:
-                    user = User(
+                    return User(
                         id=row[0],
                         username=row[1],
                         password_hash=row[2],
@@ -227,13 +227,10 @@ class UserRepository:
                         phone=row[5] or "",
                         address=row[6] or "",
                         pincode=row[7] or "",
-                        license_no=row[8] or ""
+                        license_no=row[8] or "",
+                        gender=row[9] or "Not Specified",
+                        social_category=row[10] or "General"
                     )
-                    # pyrefly: ignore [missing-attribute]
-                    user.gender = row[9]
-                    # pyrefly: ignore [missing-attribute]
-                    user.social_category = row[10]
-                    return user
                 return None
 
     def find_by_phone(self, phone: str) -> Optional[User]:
@@ -247,7 +244,7 @@ class UserRepository:
                 )
                 row = cursor.fetchone()
                 if row:
-                    user = User(
+                    return User(
                         id=row[0],
                         username=row[1],
                         password_hash=row[2],
@@ -256,13 +253,10 @@ class UserRepository:
                         phone=row[5] or "",
                         address=row[6] or "",
                         pincode=row[7] or "",
-                        license_no=row[8] or ""
+                        license_no=row[8] or "",
+                        gender=row[9] or "Not Specified",
+                        social_category=row[10] or "General"
                     )
-                    # pyrefly: ignore [missing-attribute]
-                    user.gender = row[9]
-                    # pyrefly: ignore [missing-attribute]
-                    user.social_category = row[10]
-                    return user
                 return None
 
     def save_user(self, user: User) -> bool:
@@ -271,8 +265,8 @@ class UserRepository:
                 with conn.cursor() as cursor:
                     cursor.execute(
                         """INSERT INTO users (username, password_hash, full_name, role, 
-                                              phone, address, pincode, license_no)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                                              phone, address, pincode, license_no, gender, social_category)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                         (
                             user.username.strip().lower(),
                             user.password_hash,
@@ -282,6 +276,8 @@ class UserRepository:
                             user.address,
                             user.pincode,
                             user.license_no,
+                            user.gender,
+                            user.social_category,
                         ),
                     )
                 conn.commit()
@@ -300,7 +296,6 @@ class UserRepository:
     def search_farmer(self, query: str) -> Optional[dict]:
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
-                # Upgraded to use LIKE for partial searches!
                 search_term = f"%{query.strip()}%"
                 cursor.execute(
                     """SELECT username, full_name, phone, address, pincode 
@@ -543,7 +538,6 @@ class UserRepository:
         except Exception:
             return False
 
-
     def get_user_cattle_profiles(self, username: str) -> list:
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
@@ -555,8 +549,6 @@ class UserRepository:
                     ORDER BY cattle_tag ASC
                 """, (username.strip(),))
                 return cursor.fetchall()
-
-
 
     def get_farm_yield_trend(self, username: str, days: int = 30) -> list:
         from datetime import datetime, timedelta
@@ -574,7 +566,6 @@ class UserRepository:
                 """, (username.strip(), cutoff_date))
                 return [{"date": str(row[0]), "yield": float(row[1])} for row in cursor.fetchall()]
 
-   
     def get_cow_contributions(self, username: str, days: int = 30) -> list:
         from datetime import datetime, timedelta
         cutoff_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
@@ -595,7 +586,6 @@ class UserRepository:
                 """, (username.strip(), cutoff_date))
                 return [{"tag": row[0], "total": float(row[1])} for row in cursor.fetchall()]
 
-
     # --- DELETE RECORD METHODS ---
     def delete_milk_log(self, username: str, cattle_tag: str, record_date: str) -> bool:
         try:
@@ -614,9 +604,7 @@ class UserRepository:
 
     def delete_diagnosis_record(self, username: str, cattle_tag: str, created_at: str) -> bool:
         try:
-            # Extract ONLY the core date & time (first 19 characters) to safely ignore timezones/milliseconds
             db_timestamp = created_at[:19].replace("T", " ")
-            
             with get_db_connection() as conn:
                 with conn.cursor() as cursor:
                     cursor.execute("""
@@ -631,8 +619,6 @@ class UserRepository:
         except Exception:
             return False
 
-    
-    # --- DELETE BREEDING RECORD METHODS ---
     def delete_breeding_log(self, username: str, cattle_tag: str, event_date: str) -> bool:
         try:
             with get_db_connection() as conn:
@@ -648,7 +634,6 @@ class UserRepository:
         except Exception:
             return False
 
-    # --- DELETE VACCINATION RECORD METHODS ---
     def delete_vaccination_log(self, username: str, cattle_tag: str, administered_date: str) -> bool:
         try:
             with get_db_connection() as conn:
@@ -664,8 +649,6 @@ class UserRepository:
         except Exception:
             return False
 
-
-    # --- DELETE CATTLE PROFILE METHOD ---
     def delete_cattle_profile(self, username: str, cattle_tag: str) -> bool:
         """Permanently deletes a cow and all its historical records across all modules."""
         try:
@@ -674,23 +657,82 @@ class UserRepository:
                     u_name = username.strip()
                     c_tag = cattle_tag.strip().upper()
 
-                    # 1. Erase Yield Analytics (Milk Logs)
                     cursor.execute("DELETE FROM milk_production_logs WHERE LOWER(username) = LOWER(%s) AND cattle_tag = %s", (u_name, c_tag))
-                    
-                    # 2. Erase AI Diagnosis Triage History
                     cursor.execute("DELETE FROM diagnosis_history WHERE LOWER(username) = LOWER(%s) AND cattle_tag = %s", (u_name, c_tag))
-                    
-                    # 3. Erase Breeding Records
                     cursor.execute("DELETE FROM breeding_logs WHERE LOWER(username) = LOWER(%s) AND cattle_tag = %s", (u_name, c_tag))
-                    
-                    # 4. Erase Vaccination Records
                     cursor.execute("DELETE FROM vaccination_logs WHERE LOWER(username) = LOWER(%s) AND cattle_tag = %s", (u_name, c_tag))
-                    
-                    # 5. Erase the Core Cattle Profile
                     cursor.execute("DELETE FROM cattle_profiles WHERE LOWER(username) = LOWER(%s) AND cattle_tag = %s", (u_name, c_tag))
                     
-                conn.commit() # Commit all deletions simultaneously
+                conn.commit() 
                 return True
         except Exception as e:
             print(f"[ERROR] Hard Delete Failed: {e}")
             return False
+
+    # =========================================================================
+    # NEW ADMIN COMMAND CENTER METHODS (Soft Delete & Summary)
+    # =========================================================================
+
+    def toggle_user_status(self, username: str) -> Optional[bool]:
+        """Soft deletes or restores a user by toggling their is_active status."""
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    # Flip the boolean and return the new state
+                    cursor.execute("""
+                        UPDATE users 
+                        SET is_active = NOT is_active 
+                        WHERE LOWER(username) = LOWER(%s) 
+                        RETURNING is_active
+                    """, (username.strip(),))
+                    new_status = cursor.fetchone()
+                    conn.commit()
+                    return new_status[0] if new_status else None
+        except Exception as e:
+            print(f"[ERROR] Failed to toggle user status: {e}")
+            return None
+
+    def get_user_summary(self, username: str, role: str) -> dict:
+        """Fetches a quick summary of a user's activity for the Admin View Profile modal."""
+        summary = {"total_activity": 0, "details": {}}
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    u_name = username.strip().lower()
+                    if role.lower() == 'farmer' or 'pashu' in role.lower():
+                        # 1. Count Cattle
+                        cursor.execute("SELECT COUNT(*) FROM cattle_profiles WHERE LOWER(username) = %s AND status = 'Active'", (u_name,))
+                        # pyrefly: ignore [unsupported-operation]
+                        cattle_count = cursor.fetchone()[0]
+                        # 2. Count Milk Logs
+                        cursor.execute("SELECT COUNT(*) FROM milk_production_logs WHERE LOWER(username) = %s", (u_name,))
+                        # pyrefly: ignore [unsupported-operation]
+                        milk_count = cursor.fetchone()[0]
+                        # 3. Count Diagnoses
+                        cursor.execute("SELECT COUNT(*) FROM diagnosis_history WHERE LOWER(username) = %s", (u_name,))
+                        # pyrefly: ignore [unsupported-operation]
+                        diagnosis_count = cursor.fetchone()[0]
+                        
+                        summary["total_activity"] = cattle_count + milk_count + diagnosis_count
+                        summary["details"] = {
+                            "Active Cattle": cattle_count,
+                            "Milk Logs Submitted": milk_count,
+                            "AI Diagnoses Run": diagnosis_count
+                        }
+                    elif role.lower() == 'veterinarian':
+                        # Count clinical consultations completed by this vet
+                        cursor.execute("SELECT COUNT(*) FROM vet_consultations WHERE LOWER(vet_username) = %s", (u_name,))
+                        # pyrefly: ignore [unsupported-operation]
+                        consult_count = cursor.fetchone()[0]
+                        
+                        summary["total_activity"] = consult_count
+                        summary["details"] = {
+                            "Clinical Consultations": consult_count,
+                            "Status": "VCI Registration on File"
+                        }
+                    else:
+                        summary["details"] = {"Account Type": "System Administrator"}
+            return summary
+        except Exception as e:
+            print(f"[ERROR] Failed to fetch user summary: {e}")
+            return summary

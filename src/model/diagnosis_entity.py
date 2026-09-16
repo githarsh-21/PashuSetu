@@ -18,6 +18,8 @@ class User:
     address: str = ""
     pincode: str = ""
     license_no: str = ""
+    gender: str = "Not Specified"
+    social_category: str = "General"
 
 @dataclass
 class VaccinationRecord:
