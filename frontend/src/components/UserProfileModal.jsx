@@ -54,10 +54,14 @@ export default function UserProfileModal({ user, onClose }) {
                         <span className="font-medium text-slate-500 shrink-0">{t('lbl_address', 'Address:')}</span>
                         <span className="font-bold text-slate-900 leading-tight break-words">{user.address || t('lbl_not_provided', 'Not Provided')}</span>
                     </div>
+
+                    {/* 🟢 FIXED: Now looking for user.social_category instead of user.category */}
                     <div className="flex items-center space-x-3 text-slate-700">
                         <Shield className="w-4 h-4 text-emerald-600 shrink-0" />
                         <span className="font-medium text-slate-500 shrink-0">{t('lbl_category', 'Category:')}</span>
-                        <span className="font-bold text-slate-900">{user.category ? t(`category_${user.category.toLowerCase()}`, user.category) : t('category_general', 'General')}</span>
+                        <span className="font-bold text-slate-900">
+                            {user.social_category ? t(`category_${user.social_category.toLowerCase()}`, user.social_category) : t('category_general', 'General')}
+                        </span>
                     </div>
                 </div>
 
