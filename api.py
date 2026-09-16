@@ -183,11 +183,19 @@ async def register(
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"KYC Verification failed: {str(e)}")
 
-    assert license_no is not None
-    success, msg = auth_service.register(username, password, full_name, role, phone, address, pincode, license_no)
+    # FIX: Only require a license number if the user is registering as a Veterinarian.
+    safe_license_no = license_no if license_no else ""
+    
+    if role.lower() == 'veterinarian' and not safe_license_no:
+        raise HTTPException(status_code=400, detail="Veterinarians must provide a valid License/Registration Number.")
+
+    # Proceed with registration using the safe_license_no
+    success, msg = auth_service.register(username, password, full_name, role, phone, address, pincode, safe_license_no)
+    
     if not success:
         raise HTTPException(status_code=400, detail=msg)
 
+    # Save their demographic data for Govt Schemes
     user_repo.update_user_demographics(username, gender, category)
     return {"message": msg}
 
