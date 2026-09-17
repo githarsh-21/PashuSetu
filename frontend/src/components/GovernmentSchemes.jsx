@@ -114,7 +114,10 @@ export default function GovernmentSchemes({ username }) {
 
     useEffect(() => {
         async function fetchSchemes() {
+            if (!username) return;
+
             try {
+                setLoading(true);
                 // Parallel fetch to guarantee we grab both the schemes payload and the active cattle count
                 const [schemesRes, cattleRes] = await Promise.all([
                     API.get(`/schemes/${username}`),
@@ -126,20 +129,36 @@ export default function GovernmentSchemes({ username }) {
                 const activeCattleCount = cattleRes.data.herd?.filter(c => c.status === 'Active').length || 0;
 
                 // Safely merge the demographic profile we attached in api.py with the AI content
-                setSchemesData({
+                const mergedData = {
                     ...contentData,
                     profile: {
                         ...(contentData.profile || {}),
                         ...(apiData.profile || {}),
                         cows: activeCattleCount
                     }
-                });
+                };
+
+                // 📡 CACHE IT: Save to local storage for offline access
+                localStorage.setItem(`pashusetu_schemes_cache_${username}`, JSON.stringify(mergedData));
+
+                setSchemesData(mergedData);
+                setError('');
             } catch (err) {
-                setError('Failed to fetch government schemes.');
+                // 📡 OFFLINE FALLBACK: Try to load from cache
+                console.warn("Network offline or fetch error, loading cached schemes...");
+                const cachedData = localStorage.getItem(`pashusetu_schemes_cache_${username}`);
+
+                if (cachedData) {
+                    setSchemesData(JSON.parse(cachedData));
+                    setError('');
+                } else {
+                    setError(t('err_fetch_schemes', 'Failed to fetch government schemes. Please check your internet connection.'));
+                }
             } finally {
                 setLoading(false);
             }
         }
+
         fetchSchemes();
     }, [username]);
 
@@ -188,7 +207,7 @@ export default function GovernmentSchemes({ username }) {
         return t(exactKey, { defaultValue: text, keySeparator: false });
     };
 
-    if (loading) {
+    if (loading && !schemesData) {
         return (
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 sm:p-12 max-w-4xl mx-auto text-center space-y-3 mx-4 sm:mx-auto">
                 <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto" />

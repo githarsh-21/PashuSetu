@@ -36,7 +36,8 @@ app = FastAPI(title="PashuSetu API", version="2.0")
 
 # 1. CORS Updated for React/Vite local network testing (Mobile PWA testing)
 origins = [
-    "http://localhost:5173", # For local testing
+    "http://localhost:5173", # For local testing,
+    "http://localhost:4173", # For local testing with npm run preview
     "https://pashu-setu-one.vercel.app" # <-- Your live Vercel URL
 ]
 

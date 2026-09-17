@@ -8,7 +8,18 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8000', // Assuming your FastAPI runs on port 8000
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        secure: false,
+      }
+    }
+  },
+  // 📡 NEW: Tell the preview server to route to Python too!
+  preview: {
+    port: 4173,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
         changeOrigin: true,
         secure: false,
       }
@@ -20,6 +31,18 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icon-192.png', 'icon-512.png'],
+
+      // 📦 NEW: Aggressive offline caching strategy
+      workbox: {
+        // Caches HTML, JS, CSS, Images, JSON (for translations), and Fonts
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,json,woff,woff2,ttf}'],
+        // Safely bump the file size limit to 5MB (useful for heavy React bundles or images)
+        maximumFileSizeToCacheInBytes: 5000000,
+        // Ensures the service worker takes over the page immediately without waiting
+        clientsClaim: true,
+        skipWaiting: true,
+      },
+
       manifest: {
         name: 'PashuSetu Livestock Health',
         short_name: 'PashuSetu',

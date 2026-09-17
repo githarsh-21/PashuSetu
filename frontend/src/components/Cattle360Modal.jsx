@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Activity, Syringe, Milk, HeartHandshake, Calendar, Trash2 } from 'lucide-react';
+import { X, Activity, Syringe, Milk, HeartHandshake, Calendar, Trash2, CheckCircle } from 'lucide-react';
 import API from '../services/api';
+import { pashuDb } from '../db/pashuDb'; // 📡 Import our local database
 
 export default function Cattle360Modal({ username, tag, onClose }) {
     const { t, i18n } = useTranslation();
@@ -14,14 +15,35 @@ export default function Cattle360Modal({ username, tag, onClose }) {
 
     const fetch360 = async () => {
         try {
+            setLoading(true);
             const [profileRes, timelineRes] = await Promise.all([
                 API.get(`/cattle/profile-360/${username}/${tag}`),
                 API.get(`/vaccination/timeline/${username}/${tag}`)
             ]);
-            setData(profileRes.data);
-            setTimeline(timelineRes.data);
+
+            const profileData = profileRes.data;
+            const timelineData = timelineRes.data;
+
+            // 📡 CACHE IT: Save snapshot for offline viewing
+            localStorage.setItem(`pashusetu_360_${username}_${tag}`, JSON.stringify({
+                profile: profileData,
+                timeline: timelineData
+            }));
+
+            setData(profileData);
+            setTimeline(timelineData);
         } catch (err) {
-            console.error(err);
+            // 📡 OFFLINE FALLBACK: Pull from cache if network drops
+            console.warn("Network offline, loading cached 360 profile...");
+            const cachedData = localStorage.getItem(`pashusetu_360_${username}_${tag}`);
+
+            if (cachedData) {
+                const parsed = JSON.parse(cachedData);
+                setData(parsed.profile);
+                setTimeline(parsed.timeline);
+            } else {
+                console.error("No cached data available:", err);
+            }
         } finally {
             setLoading(false);
         }
@@ -53,20 +75,135 @@ export default function Cattle360Modal({ username, tag, onClose }) {
         });
     };
 
+    // 📡 Offline-aware deletion with Optimistic UI updates
     const handleDelete = async (recordType, identifier) => {
         const confirmDelete = window.confirm(t('confirm_delete', 'Are you sure you want to delete this record?'));
         if (!confirmDelete) return;
 
-        try {
-            await API.post(`/${recordType}/delete`, {
-                username: username,
-                cattle_tag: tag,
-                identifier: identifier
+        const payload = {
+            username: username,
+            cattle_tag: tag,
+            identifier: identifier
+        };
+
+        const updateLocalState = () => {
+            setData(prev => {
+                if (!prev) return prev;
+                const newData = { ...prev };
+
+                if (recordType === 'vaccination') newData.vaccinations = newData.vaccinations.filter(r => r[1] !== identifier);
+                if (recordType === 'diagnosis') newData.diagnoses = newData.diagnoses.filter(r => r[0] !== identifier);
+                if (recordType === 'milk') newData.milk_logs = newData.milk_logs.filter(r => r[0] !== identifier);
+                if (recordType === 'breeding') newData.breeding_events = newData.breeding_events.filter(r => r[1] !== identifier);
+
+                const cachedData = localStorage.getItem(`pashusetu_360_${username}_${tag}`);
+                if (cachedData) {
+                    try {
+                        const parsed = JSON.parse(cachedData);
+                        parsed.profile = newData;
+                        localStorage.setItem(`pashusetu_360_${username}_${tag}`, JSON.stringify(parsed));
+                    } catch (e) { }
+                }
+
+                return newData;
             });
+        };
+
+        if (!navigator.onLine) {
+            try {
+                await pashuDb.sync_queue.add({
+                    action: 'DELETE_360_RECORD',
+                    payload: { recordType, ...payload }
+                });
+                updateLocalState();
+                alert(t('alert_no_net_save_local', '⚠️ No internet. Record saved locally and will auto-sync when network returns!'));
+            } catch (dbErr) {
+                console.error(dbErr);
+                alert(t('alert_storage_err', 'Failed to save offline. Please check storage permissions.'));
+            }
+            return;
+        }
+
+        try {
+            await API.post(`/${recordType}/delete`, payload);
             fetch360();
         } catch (err) {
-            console.error(err);
-            alert(t('err_delete_record', 'Failed to delete record. See console for details.'));
+            console.warn('Online delete failed, storing locally:', err);
+            try {
+                await pashuDb.sync_queue.add({
+                    action: 'DELETE_360_RECORD',
+                    payload: { recordType, ...payload }
+                });
+                updateLocalState();
+                alert(t('alert_net_drop_save_local', '⚠️ Network dropped. Record saved locally and will sync later.'));
+            } catch (dbErr) {
+                alert(t('err_delete_record', 'Failed to delete record. See console for details.'));
+            }
+        }
+    };
+
+    // 📡 NEW: Quick Action "Log as Given"
+    const handleLogAsGiven = async (e, rawVaccineName) => {
+        e.preventDefault();
+
+        const translatedName = translateVaccineName(rawVaccineName);
+        const confirmLog = window.confirm(t('confirm_log_given', `Mark ${translatedName} as given today?`));
+        if (!confirmLog) return;
+
+        const payload = {
+            username: username,
+            cattle_tag: tag,
+            vaccine_name: rawVaccineName,
+            admin_date: new Date().toISOString().split('T')[0] // Today's date
+        };
+
+        // 📡 Optimistic UI: Instantly pop it from Alerts to History
+        const updateLocalState = () => {
+            setTimeline(prev => ({
+                ...prev,
+                upcoming_alerts: prev.upcoming_alerts.filter(a => {
+                    let aName = a.vaccine_name || a.vaccine;
+                    if (Array.isArray(a)) aName = typeof a[0] === 'string' && a[0].match(/^\d{4}-/) ? a[1] : a[0];
+                    return aName !== rawVaccineName;
+                })
+            }));
+            setData(prev => ({
+                ...prev,
+                vaccinations: [[rawVaccineName, payload.admin_date], ...(prev?.vaccinations || [])]
+            }));
+        };
+
+        if (!navigator.onLine) {
+            try {
+                await pashuDb.offline_vaccines.add({
+                    ...payload,
+                    sync_status: 'pending',
+                    created_at: new Date().toISOString()
+                });
+                updateLocalState();
+                alert(t('alert_no_net_save_local', '⚠️ No internet. Record saved locally and will auto-sync when network returns!'));
+            } catch (dbErr) {
+                alert(t('alert_storage_err', 'Failed to save offline. Please check storage permissions.'));
+            }
+            return;
+        }
+
+        try {
+            await API.post('/vaccination/log', payload);
+            fetch360(); // Re-fetch to ensure perfect server sync
+        } catch (err) {
+            console.warn('Online log failed, storing locally:', err);
+            try {
+                await pashuDb.offline_vaccines.add({
+                    ...payload,
+                    sync_status: 'pending',
+                    created_at: new Date().toISOString()
+                });
+                updateLocalState();
+                alert(t('alert_net_drop_save_local', '⚠️ Network dropped. Record saved locally and will sync later.'));
+            } catch (dbErr) {
+                alert(t('err_log_vaccine', 'Failed to log vaccine.'));
+            }
         }
     };
 
@@ -226,7 +363,7 @@ export default function Cattle360Modal({ username, tag, onClose }) {
 
                 {/* Content Body */}
                 <div className="p-4 sm:p-6 flex-1 overflow-y-auto bg-slate-50/30">
-                    {loading ? (
+                    {loading && !data ? (
                         <div className="text-center py-12 text-slate-500 font-medium">
                             {t('msg_loading_360', 'Loading 360° health record...')}
                         </div>
@@ -264,7 +401,7 @@ export default function Cattle360Modal({ username, tag, onClose }) {
                                                     const isOverdue = String(rawStatus).toLowerCase().includes('overdue') || String(rawStatus).toLowerCase().includes('due now');
 
                                                     return (
-                                                        <div key={`up-${idx}`} className={`p-3.5 rounded-xl border flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 shadow-sm ${isOverdue ? 'border-rose-200 bg-rose-50' : 'border-amber-200 bg-amber-50'}`}>
+                                                        <div key={`up-${idx}`} className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 shadow-sm ${isOverdue ? 'border-rose-200 bg-rose-50' : 'border-amber-200 bg-amber-50'}`}>
                                                             <div>
                                                                 <p className={`font-bold text-sm sm:text-base ${isOverdue ? 'text-rose-800' : 'text-amber-800'}`}>
                                                                     {vName}
@@ -273,9 +410,18 @@ export default function Cattle360Modal({ username, tag, onClose }) {
                                                                     {t('lbl_target_date', 'Target Date:')} {vDate}
                                                                 </p>
                                                             </div>
-                                                            <span className={`text-[10px] sm:text-xs font-black px-3 py-1 rounded-full border self-start sm:self-auto whitespace-nowrap ${isOverdue ? 'bg-rose-200 text-rose-800 border-rose-300' : 'bg-amber-200 text-amber-800 border-amber-300'}`}>
-                                                                {vStatus}
-                                                            </span>
+                                                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mt-2 sm:mt-0">
+                                                                <span className={`text-[10px] sm:text-xs font-black px-3 py-1 rounded-full border self-start sm:self-auto whitespace-nowrap ${isOverdue ? 'bg-rose-200 text-rose-800 border-rose-300' : 'bg-amber-200 text-amber-800 border-amber-300'}`}>
+                                                                    {vStatus}
+                                                                </span>
+                                                                <button
+                                                                    onClick={(e) => handleLogAsGiven(e, rawName)}
+                                                                    className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold px-4 py-2 rounded-lg transition shadow-sm cursor-pointer whitespace-nowrap self-start sm:self-auto"
+                                                                >
+                                                                    <CheckCircle className="w-4 h-4" />
+                                                                    {t('btn_log_as_given', 'Log as Given')}
+                                                                </button>
+                                                            </div>
                                                         </div>
                                                     );
                                                 })}

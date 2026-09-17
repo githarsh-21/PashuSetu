@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-// Use environment variable if set, otherwise fallback to the live Render backend
+// Temporarily point to the local backend to bypass Render and catch the error in the terminal
 const baseURL = import.meta.env.VITE_API_URL || 'https://pashusetu-backend-14uk.onrender.com/api';
 
 const API = axios.create({

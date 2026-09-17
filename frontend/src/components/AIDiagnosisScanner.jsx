@@ -214,7 +214,7 @@ export default function AIDiagnosisScanner({ username, herd = [] }) {
                 <div className="mb-4 p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs sm:text-sm rounded-xl flex items-center justify-between">
                     <div className="flex items-center space-x-2">
                         <WifiOff className="w-4 h-4 shrink-0 text-amber-600" />
-                        <span className="font-semibold">{t('msg_offline_mode', 'Offline Mode: Shell and cached UI active.')}</span>
+                        <span className="font-semibold">{t('msg_offline_shell', 'Offline mode: Shell and cached UI active')}</span>
                     </div>
                     <span className="text-[10px] bg-amber-100 text-amber-900 px-2 py-0.5 rounded font-mono uppercase">Offline</span>
                 </div>
@@ -322,7 +322,7 @@ export default function AIDiagnosisScanner({ username, herd = [] }) {
                             <>
                                 <Activity className="w-5 h-5 shrink-0" />
                                 <span className="truncate">
-                                    {!isOnline ? t('btn_offline', 'Offline (Reconnect to Run)') : t('btn_run_ai', 'Run AI Diagnosis')}
+                                    {!isOnline ? t('msg_reconnect_run', 'Offline (Reconnect to sync)') : t('btn_run_ai', 'Run AI Diagnosis')}
                                 </span>
                             </>
                         )}
@@ -390,10 +390,10 @@ export default function AIDiagnosisScanner({ username, herd = [] }) {
                                                 </h4>
                                             </div>
                                             <span className={`px-2.5 py-1 rounded text-xs font-black uppercase tracking-wider shrink-0 border ${isCritical
-                                                    ? 'bg-rose-500/20 text-rose-400 border-rose-500/40'
-                                                    : isWarning
-                                                        ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
-                                                        : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                                                ? 'bg-rose-500/20 text-rose-400 border-rose-500/40'
+                                                : isWarning
+                                                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                                                    : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
                                                 }`}>
                                                 [ {parsedData.severity} ]
                                             </span>

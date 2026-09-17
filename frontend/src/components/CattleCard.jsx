@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Calendar, Tag, Activity, ChevronRight, Droplet, Syringe, X, HeartHandshake, Trash2 } from 'lucide-react';
 import API from '../services/api';
+import { pashuDb } from '../db/pashuDb'; // 📡 Import our local database
 
-export default function CattleCard({ cattle, username, onOpenProfile, onLogVaccine, onRefresh, alerts = [] }) {
+export default function CattleCard({ cattle, username, onOpenProfile, onLogVaccine, onRefresh, onRemoveLocally, alerts = [] }) {
     const { t, i18n } = useTranslation();
 
     const [showMilkModal, setShowMilkModal] = useState(false);
@@ -65,71 +66,188 @@ export default function CattleCard({ cattle, username, onOpenProfile, onLogVacci
     if (vStatus === 'overdue') vStyles = "bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-700 border-rose-200 ring-2 ring-rose-400";
     if (vStatus === 'soon') vStyles = "bg-amber-50 hover:bg-amber-600 hover:text-white text-amber-700 border-amber-200 ring-2 ring-amber-400";
 
+    // 📡 Offline-aware Milk Logging
     const handleSaveMilkLog = async (e) => {
         e.preventDefault();
         setLoading(true);
+
+        const payload = {
+            username: username,
+            cattle_tag: cattle.tag,
+            morning_litres: parseFloat(morning || 0),
+            evening_litres: parseFloat(evening || 0),
+            log_date: date,
+            notes: notes || ""
+        };
+
+        // 1. Check if offline
+        if (!navigator.onLine) {
+            try {
+                await pashuDb.offline_milk_yields.add({
+                    ...payload,
+                    sync_status: 'pending',
+                    created_at: new Date().toISOString()
+                });
+                alert(t('alert_no_net_save_local', '⚠️ No internet. Record saved locally and will auto-sync when network returns!'));
+                setShowMilkModal(false);
+                setMorning('');
+                setEvening('');
+                setNotes('');
+            } catch (dbErr) {
+                alert(t('alert_storage_err', 'Failed to save offline. Please check storage permissions.'));
+            } finally {
+                setLoading(false);
+            }
+            return;
+        }
+
+        // 2. Try online save
         try {
-            await API.post('/milk/log', {
-                username: username,
-                cattle_tag: cattle.tag,
-                morning_litres: parseFloat(morning || 0),
-                evening_litres: parseFloat(evening || 0),
-                log_date: date,
-                notes: notes || ""
-            });
+            await API.post('/milk/log', payload);
             setShowMilkModal(false);
             setMorning('');
             setEvening('');
             setNotes('');
             if (onRefresh) onRefresh();
         } catch (err) {
-            alert(t('err_save_milk', 'Failed to save milk log.'));
+            // 3. Fallback to offline if network drops mid-request
+            console.warn('Online save failed, storing locally:', err);
+            try {
+                await pashuDb.offline_milk_yields.add({
+                    ...payload,
+                    sync_status: 'pending',
+                    created_at: new Date().toISOString()
+                });
+                alert(t('alert_net_drop_save_local', '⚠️ Network dropped. Record saved locally and will sync later.'));
+                setShowMilkModal(false);
+                setMorning('');
+                setEvening('');
+                setNotes('');
+            } catch (dbErr) {
+                alert(t('err_save_milk', 'Failed to save milk log.'));
+            }
         } finally {
             setLoading(false);
         }
     };
 
+    // 📡 Offline-aware Breeding Logging
     const handleSaveBreeding = async (e) => {
         e.preventDefault();
         setLoading(true);
-        try {
-            // Map key to standard database string
-            const eventPayloadMap = {
-                opt_ai: 'Artificial Insemination (AI)',
-                opt_natural: 'Natural Service',
-                opt_preg_check: 'Pregnancy Check'
-            };
 
-            await API.post('/breeding/log', {
-                username: username,
-                cattle_tag: cattle.tag,
-                event_type: eventPayloadMap[eventType] || eventType,
-                event_date: breedingDate,
-                notes: breedingNotes || ""
-            });
+        const eventPayloadMap = {
+            opt_ai: 'Artificial Insemination (AI)',
+            opt_natural: 'Natural Service',
+            opt_preg_check: 'Pregnancy Check'
+        };
+
+        const payload = {
+            username: username,
+            cattle_tag: cattle.tag,
+            event_type: eventPayloadMap[eventType] || eventType,
+            event_date: breedingDate,
+            notes: breedingNotes || ""
+        };
+
+        // 1. Check if offline
+        if (!navigator.onLine) {
+            try {
+                await pashuDb.offline_breeding_logs.add({
+                    ...payload,
+                    sync_status: 'pending',
+                    created_at: new Date().toISOString()
+                });
+                alert(t('alert_no_net_save_local', '⚠️ No internet. Record saved locally and will auto-sync when network returns!'));
+                setShowBreedingModal(false);
+                setBreedingNotes('');
+            } catch (dbErr) {
+                alert(t('alert_storage_err', 'Failed to save offline. Please check storage permissions.'));
+            } finally {
+                setLoading(false);
+            }
+            return;
+        }
+
+        // 2. Try online save
+        try {
+            await API.post('/breeding/log', payload);
             setShowBreedingModal(false);
             setBreedingNotes('');
             if (onRefresh) onRefresh();
         } catch (err) {
-            alert(t('err_save_breed', 'Failed to save breeding record.'));
+            // 3. Fallback to offline if network drops mid-request
+            console.warn('Online save failed, storing locally:', err);
+            try {
+                await pashuDb.offline_breeding_logs.add({
+                    ...payload,
+                    sync_status: 'pending',
+                    created_at: new Date().toISOString()
+                });
+                alert(t('alert_net_drop_save_local', '⚠️ Network dropped. Record saved locally and will sync later.'));
+                setShowBreedingModal(false);
+                setBreedingNotes('');
+            } catch (dbErr) {
+                alert(t('err_save_breed', 'Failed to save breeding record.'));
+            }
         } finally {
             setLoading(false);
         }
     };
 
+    // 📡 UPDATED: Offline-aware Cattle Archiving (Soft Delete)
     const handleArchiveCattle = async (e) => {
         e.preventDefault();
         setLoading(true);
+
+        const payload = {
+            username: username,
+            cattle_tag: cattle.tag,
+            status: archiveReason
+        };
+
+        const saveOfflineArchive = async (isNetworkDrop = false) => {
+            try {
+                // 1. Soft Delete: Mark as deleted in the local read-only cache
+                await pashuDb.cached_herd.update(cattle.tag, { is_deleted: true });
+
+                // 2. Queue the backend request in our new sync_queue
+                await pashuDb.sync_queue.add({
+                    action: 'ARCHIVE_CATTLE',
+                    payload: payload
+                });
+
+                // 3. 📡 OPTIMISTIC UI: Instantly hide the cow from App.jsx's visual state
+                if (onRemoveLocally) onRemoveLocally(cattle.tag);
+
+                const msg = isNetworkDrop
+                    ? t('alert_net_drop_save_local', '⚠️ Network dropped. Record saved locally and will sync later.')
+                    : t('alert_no_net_save_local', '⚠️ No internet. Record saved locally and will auto-sync when network returns!');
+
+                alert(msg);
+                setShowArchiveModal(false);
+            } catch (dbErr) {
+                console.error(dbErr);
+                alert(t('alert_storage_err', 'Failed to save offline. Please check storage permissions.'));
+            }
+        };
+
+        // If explicitly offline, use soft delete logic
+        if (!navigator.onLine) {
+            await saveOfflineArchive(false);
+            setLoading(false);
+            return;
+        }
+
+        // Try online save
         try {
-            await API.post('/cattle/archive', {
-                username: username,
-                cattle_tag: cattle.tag,
-                status: archiveReason
-            });
+            await API.post('/cattle/archive', payload);
             setShowArchiveModal(false);
             if (onRefresh) onRefresh();
         } catch (err) {
-            alert(t('err_archive', 'Failed to archive cattle.'));
+            // Fallback to soft delete if connection drops mid-request
+            console.warn('Online archive failed, storing locally:', err);
+            await saveOfflineArchive(true);
         } finally {
             setLoading(false);
         }

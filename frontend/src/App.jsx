@@ -13,6 +13,10 @@ import VetDashboard from './components/VetDashboard';
 import AdminDashboard from './components/AdminDashboard';
 import { PlusCircle, List, Sparkles, Landmark, TrendingUp, AlertTriangle, Download } from 'lucide-react';
 
+// 📡 NEW: Import local DB and Sync Worker
+import { pashuDb } from './db/pashuDb';
+import { syncOfflineRecords } from './services/syncService';
+
 export default function App() {
   const { t } = useTranslation();
 
@@ -67,6 +71,11 @@ export default function App() {
   });
 
   const [vaccineLogTag, setVaccineLogTag] = useState(null);
+
+  // 💉 NEW: State for custom vaccine inputs
+  const [selectedVaccineOption, setSelectedVaccineOption] = useState('FMD (Foot & Mouth)');
+  const [customVaccineName, setCustomVaccineName] = useState('');
+
   const [showAddModal, setShowAddModal] = useState(false);
   const [newTag, setNewTag] = useState('');
   const [newBreed, setNewBreed] = useState('Gir');
@@ -104,14 +113,47 @@ export default function App() {
       setVaccineAlerts(alertData);
       localStorage.setItem('pashusetu_alerts_cache', JSON.stringify(alertData));
     } catch (err) {
-      console.warn('Network offline or error fetching herd, loading cached records:', err);
+      console.warn('Network offline or error fetching herd, keeping cached records active.');
     }
+  };
+
+  // 📡 OPTIMISTIC UI: Instantly remove cow from screen without network
+  const handleRemoveCattleLocally = (tagToRemove) => {
+    setHerd((prevHerd) => {
+      const updatedHerd = prevHerd.filter((cow) => cow.tag !== tagToRemove);
+      localStorage.setItem('pashusetu_herd_cache', JSON.stringify(updatedHerd));
+      return updatedHerd;
+    });
   };
 
   useEffect(() => {
     if (user && user.role?.toLowerCase() === 'farmer') {
       fetchHerd(user.username);
     }
+  }, [user]);
+
+  // 📡 OFFLINE SYNC LISTENER
+  useEffect(() => {
+    const handleOnline = () => {
+      syncOfflineRecords();
+    };
+    window.addEventListener('online', handleOnline);
+    if (navigator.onLine) {
+      handleOnline();
+    }
+    return () => window.removeEventListener('online', handleOnline);
+  }, []);
+
+  // 📡 NEW: UI REFRESH LISTENER AFTER BACKGROUND SYNC
+  useEffect(() => {
+    const handleSyncComplete = () => {
+      if (user && user.role?.toLowerCase() === 'farmer') {
+        console.log('🔄 Background sync finished, refreshing dashboard UI...');
+        fetchHerd(user.username);
+      }
+    };
+    window.addEventListener('offline-sync-complete', handleSyncComplete);
+    return () => window.removeEventListener('offline-sync-complete', handleSyncComplete);
   }, [user]);
 
   const handleLogin = async (e) => {
@@ -123,7 +165,6 @@ export default function App() {
       setUser(loggedUser);
       localStorage.setItem('pashusetu_user', JSON.stringify(loggedUser));
     } catch (err) {
-      // 👇 CHANGED: Now using i18next translation key!
       setAuthError(t('err_invalid_login', 'Invalid username or password.'));
     }
   };
@@ -185,6 +226,7 @@ export default function App() {
     }
   };
 
+  // 📡 OFFLINE AWARE: Cattle Registration
   const handleRegisterCattle = async (e) => {
     e.preventDefault();
 
@@ -198,41 +240,110 @@ export default function App() {
       status: 'Active'
     };
 
+    if (!navigator.onLine) {
+      try {
+        await pashuDb.offline_cattle.add({
+          ...payload,
+          sync_status: 'pending',
+          created_at: new Date().toISOString()
+        });
+
+        const updatedHerd = [...herd, payload];
+        setHerd(updatedHerd);
+        localStorage.setItem('pashusetu_herd_cache', JSON.stringify(updatedHerd));
+
+        alert(t('alert_no_net_save_local', '⚠️ No internet. Record saved locally and will auto-sync when network returns!'));
+        setShowAddModal(false);
+        setNewTag('');
+        setAgeYears(3);
+        setAgeMonths(0);
+      } catch (dbErr) {
+        alert(t('alert_storage_err', 'Failed to save offline. Please check storage permissions.'));
+      }
+      return;
+    }
+
     try {
       const res = await API.post('/cattle/register', payload);
-      alert(res.data?.message || 'Cattle registered successfully.');
+      alert(res.data?.message || t('alert_cattle_reg_success', 'Cattle registered successfully.'));
       setShowAddModal(false);
       setNewTag('');
       setAgeYears(3);
       setAgeMonths(0);
       fetchHerd(user.username);
     } catch (err) {
-      if (err.response && err.response.status === 422) {
-        const errorDetails = err.response.data.detail
-          .map(errorItem => `${errorItem.loc[errorItem.loc.length - 1]}: ${errorItem.msg}`)
-          .join('\n');
-        alert(`Validation Failed:\n${errorDetails}`);
+      if (err.message === 'Network Error') {
+        try {
+          await pashuDb.offline_cattle.add({
+            ...payload,
+            sync_status: 'pending',
+            created_at: new Date().toISOString()
+          });
+          const updatedHerd = [...herd, payload];
+          setHerd(updatedHerd);
+          localStorage.setItem('pashusetu_herd_cache', JSON.stringify(updatedHerd));
+          alert(t('alert_net_drop_save_local', '⚠️ Network dropped. Record saved locally and will sync later.'));
+          setShowAddModal(false);
+          setNewTag('');
+        } catch (dbErr) {
+          alert(t('err_register_cattle', 'Failed to register cattle.'));
+        }
       } else {
-        alert(err.response?.data?.detail || 'Failed to register cattle.');
+        alert(err.response?.data?.detail || t('err_register_cattle', 'Failed to register cattle.'));
       }
     }
   };
 
+  // 💉 UPDATED: Offline-aware Vaccine Logging with Custom Inputs
   const handleLogVaccine = async (e) => {
     e.preventDefault();
     const data = new FormData(e.target);
-    try {
-      await API.post('/vaccination/log', {
-        username: user.username,
-        cattle_tag: vaccineLogTag,
-        vaccine_name: data.get('vaccineName'),
-        admin_date: data.get('adminDate')
-      });
+
+    // Determine the correct vaccine name to save
+    const finalVaccineName = selectedVaccineOption === 'Other'
+      ? customVaccineName.trim()
+      : selectedVaccineOption;
+
+    if (!finalVaccineName) {
+      alert(t('alert_enter_vaccine', 'Please enter a vaccine name.'));
+      return;
+    }
+
+    const payload = {
+      username: user.username,
+      cattle_tag: vaccineLogTag,
+      vaccine_name: finalVaccineName,
+      admin_date: data.get('adminDate')
+    };
+
+    const resetVaccineModal = () => {
       setVaccineLogTag(null);
-      alert('Vaccine logged successfully!');
+      setSelectedVaccineOption('FMD (Foot & Mouth)');
+      setCustomVaccineName('');
+    };
+
+    if (!navigator.onLine) {
+      try {
+        await pashuDb.offline_vaccines.add({
+          ...payload,
+          sync_status: 'pending',
+          created_at: new Date().toISOString()
+        });
+        alert(t('alert_no_net_save_local', '⚠️ No internet. Record saved locally and will auto-sync when network returns!'));
+        resetVaccineModal();
+      } catch (dbErr) {
+        alert(t('alert_storage_err', 'Failed to save offline. Please check storage permissions.'));
+      }
+      return;
+    }
+
+    try {
+      await API.post('/vaccination/log', payload);
+      resetVaccineModal();
+      alert(t('alert_vaccine_success', 'Vaccine logged successfully!'));
       fetchHerd(user.username);
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to log vaccine.');
+      alert(err.response?.data?.detail || t('err_log_vaccine', 'Failed to log vaccine.'));
     }
   };
 
@@ -409,14 +520,14 @@ export default function App() {
         <div className="bg-emerald-600 text-white px-4 py-2.5 flex items-center justify-between text-xs sm:text-sm shadow-md">
           <div className="flex items-center space-x-2">
             <span>📱</span>
-            <span className="font-semibold">Install PashuSetu App for full offline diagnosis access</span>
+            <span className="font-semibold">{t('msg_install_pwa', 'Install PashuSetu App for full offline diagnosis access')}</span>
           </div>
           <button
             onClick={handleInstallApp}
             className="flex items-center space-x-1 bg-white text-emerald-800 px-3 py-1 rounded-lg font-bold hover:bg-emerald-50 transition cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Install</span>
+            <span>{t('btn_install', 'Install')}</span>
           </button>
         </div>
       )}
@@ -517,6 +628,7 @@ export default function App() {
                           onOpenProfile={(tag) => setSelectedTag(tag)}
                           onLogVaccine={(tag) => setVaccineLogTag(tag)}
                           onRefresh={() => fetchHerd(user.username)}
+                          onRemoveLocally={handleRemoveCattleLocally}
                         />
                       ))}
                   </div>
@@ -619,20 +731,48 @@ export default function App() {
             <form onSubmit={handleLogVaccine} className="space-y-4">
               <div className="min-w-0">
                 <label className="block text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5 truncate">{t('lbl_vaccine_name', 'Vaccine Name')}</label>
-                <select name="vaccineName" className="w-full px-4 py-3 sm:py-2.5 rounded-xl border border-slate-300 text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-rose-500">
+                <select
+                  name="vaccineName"
+                  value={selectedVaccineOption}
+                  onChange={(e) => setSelectedVaccineOption(e.target.value)}
+                  className={`w-full px-4 py-3 sm:py-2.5 rounded-xl border border-slate-300 text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-rose-500 ${selectedVaccineOption === 'Other' ? 'mb-3' : ''}`}
+                >
                   <option value="FMD (Foot & Mouth)">{t('vac_fmd', 'FMD (Foot & Mouth)')}</option>
                   <option value="HS (Hemorrhagic Septicemia)">{t('vac_hs', 'HS (Hemorrhagic Septicemia)')}</option>
                   <option value="Brucellosis">{t('vac_brucellosis', 'Brucellosis')}</option>
                   <option value="Lumpy Skin Disease (LSD)">{t('vac_lsd', 'Lumpy Skin Disease (LSD)')}</option>
                   <option value="Rabies">{t('vac_rabies', 'Rabies')}</option>
+                  <option value="Other">{t('opt_other', 'Other (Specify below)')}</option>
                 </select>
+
+                {selectedVaccineOption === 'Other' && (
+                  <div className="animate-in fade-in slide-in-from-top-2 duration-200">
+                    <input
+                      type="text"
+                      name="customVaccineName"
+                      required
+                      value={customVaccineName}
+                      onChange={(e) => setCustomVaccineName(e.target.value)}
+                      placeholder={t('ph_custom_vaccine', 'e.g. Theileriosis')}
+                      className="w-full px-4 py-3 sm:py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
+                )}
               </div>
               <div className="min-w-0">
                 <label className="block text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5 truncate">{t('lbl_admin_date', 'Administration Date')}</label>
                 <input type="date" name="adminDate" required defaultValue={new Date().toISOString().split('T')[0]} className="w-full px-4 py-3 sm:py-2.5 rounded-xl border border-slate-300 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-rose-500" />
               </div>
               <div className="flex space-x-3 pt-4 sm:pt-2">
-                <button type="button" onClick={() => setVaccineLogTag(null)} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3.5 sm:py-3 rounded-xl font-bold text-sm cursor-pointer transition truncate px-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVaccineLogTag(null);
+                    setSelectedVaccineOption('FMD (Foot & Mouth)');
+                    setCustomVaccineName('');
+                  }}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3.5 sm:py-3 rounded-xl font-bold text-sm cursor-pointer transition truncate px-2"
+                >
                   {t('btn_cancel', 'Cancel')}
                 </button>
                 <button type="submit" className="flex-1 bg-rose-600 hover:bg-rose-700 text-white py-3.5 sm:py-3 rounded-xl font-bold text-sm cursor-pointer shadow-md transition truncate px-2">

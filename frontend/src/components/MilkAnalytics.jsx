@@ -21,67 +21,77 @@ export default function MilkAnalytics({ username, herdData }) {
     useEffect(() => {
         if (!username) return;
 
+        // Helper function to process data (works for both live and cached data)
+        const processAnalyticsData = (apiData) => {
+            const trend = apiData.trend || [];
+
+            // 1. Robust Contribution Parser (Handles Dicts, Lists of Lists, or Objects)
+            let rawContribs = apiData.contributions || apiData.individual_yields || apiData.breakdown || [];
+            let parsedContribs = [];
+
+            if (Array.isArray(rawContribs)) {
+                if (rawContribs.length > 0 && Array.isArray(rawContribs[0])) {
+                    parsedContribs = rawContribs.map(item => ({ tag: item[0], total: Number(item[1]) || 0 }));
+                } else {
+                    parsedContribs = rawContribs;
+                }
+            } else if (typeof rawContribs === 'object' && rawContribs !== null) {
+                parsedContribs = Object.entries(rawContribs).map(([tag, total]) => ({
+                    tag: tag,
+                    total: Number(total) || 0
+                }));
+            }
+
+            parsedContribs.sort((a, b) => b.total - a.total);
+
+            // 2. Auto-Calculate Top Performer if backend doesn't send it cleanly
+            let topPerf = apiData.top_performer;
+            if (!topPerf || !topPerf.tag || topPerf.tag === 'N/A') {
+                topPerf = parsedContribs.length > 0
+                    ? parsedContribs[0]
+                    : { tag: 'N/A', total: 0 };
+            }
+
+            setData({
+                trend: trend,
+                contributions: parsedContribs,
+                topPerformer: topPerf
+            });
+
+            // 3. Set KPIs safely
+            const total = apiData.weekly_total !== undefined
+                ? Number(apiData.weekly_total)
+                : trend.reduce((sum, d) => sum + (Number(d.yield) || 0), 0);
+
+            const avg = apiData.avg_daily !== undefined
+                ? Number(apiData.avg_daily)
+                : (trend.length > 0 ? total / trend.length : 0);
+
+            setKpis({
+                totalYield: total.toFixed(1),
+                avgDaily: avg.toFixed(1)
+            });
+        };
+
         const fetchAnalytics = async () => {
             try {
                 setLoading(true);
+                // Try fetching live from the cloud
                 const res = await API.get(`/milk/analytics/${username}?days=7`);
 
                 if (res.data) {
-                    const trend = res.data.trend || [];
-
-                    // 1. Robust Contribution Parser (Handles Dicts, Lists of Lists, or Objects)
-                    let rawContribs = res.data.contributions || res.data.individual_yields || res.data.breakdown || [];
-                    let parsedContribs = [];
-
-                    if (Array.isArray(rawContribs)) {
-                        if (rawContribs.length > 0 && Array.isArray(rawContribs[0])) {
-                            // Format: [['COW-100', 37.0]]
-                            parsedContribs = rawContribs.map(item => ({ tag: item[0], total: Number(item[1]) || 0 }));
-                        } else {
-                            // Format: [{tag: 'COW-100', total: 37.0}]
-                            parsedContribs = rawContribs;
-                        }
-                    } else if (typeof rawContribs === 'object' && rawContribs !== null) {
-                        // Format: {'COW-100': 37.0}
-                        parsedContribs = Object.entries(rawContribs).map(([tag, total]) => ({
-                            tag: tag,
-                            total: Number(total) || 0
-                        }));
-                    }
-
-                    // Sort highest yield to lowest for accurate leaderboard & top performer
-                    parsedContribs.sort((a, b) => b.total - a.total);
-
-                    // 2. Auto-Calculate Top Performer if backend doesn't send it cleanly
-                    let topPerf = res.data.top_performer;
-                    if (!topPerf || !topPerf.tag || topPerf.tag === 'N/A') {
-                        topPerf = parsedContribs.length > 0
-                            ? parsedContribs[0]
-                            : { tag: 'N/A', total: 0 };
-                    }
-
-                    setData({
-                        trend: trend,
-                        contributions: parsedContribs,
-                        topPerformer: topPerf
-                    });
-
-                    // 3. Set KPIs safely
-                    const total = res.data.weekly_total !== undefined
-                        ? Number(res.data.weekly_total)
-                        : trend.reduce((sum, d) => sum + (Number(d.yield) || 0), 0);
-
-                    const avg = res.data.avg_daily !== undefined
-                        ? Number(res.data.avg_daily)
-                        : (trend.length > 0 ? total / trend.length : 0);
-
-                    setKpis({
-                        totalYield: total.toFixed(1),
-                        avgDaily: avg.toFixed(1)
-                    });
+                    // 📡 CACHE IT: Save the latest successful pull to the device
+                    localStorage.setItem(`pashusetu_analytics_${username}`, JSON.stringify(res.data));
+                    processAnalyticsData(res.data);
                 }
             } catch (err) {
-                console.error("Analytics Fetch Error:", err);
+                // 📡 OFFLINE FALLBACK: Load from cache if network is down
+                console.warn("Network offline or fetch error, loading cached analytics...");
+                const cachedData = localStorage.getItem(`pashusetu_analytics_${username}`);
+
+                if (cachedData) {
+                    processAnalyticsData(JSON.parse(cachedData));
+                }
             } finally {
                 setLoading(false);
             }
@@ -90,7 +100,6 @@ export default function MilkAnalytics({ username, herdData }) {
         fetchAnalytics();
     }, [username, herdData, i18n.language]);
 
-    // Localized Date Formatter for Axis & Tooltip
     const formatDate = (dateStr) => {
         if (!dateStr) return '';
         const d = new Date(dateStr);
@@ -109,7 +118,6 @@ export default function MilkAnalytics({ username, herdData }) {
 
     return (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6 max-w-6xl mx-auto space-y-6">
-            {/* Header Banner */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-3">
                 <div className="flex items-center space-x-3">
                     <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
@@ -128,7 +136,6 @@ export default function MilkAnalytics({ username, herdData }) {
                 </div>
             </div>
 
-            {/* KPI Summary Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/70 flex items-center space-x-3">
                     <div className="p-3 bg-blue-100 text-blue-700 rounded-xl shrink-0">
@@ -150,7 +157,6 @@ export default function MilkAnalytics({ username, herdData }) {
                     </div>
                 </div>
 
-                {/* Top Performer Card */}
                 <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200/80 flex items-center space-x-3">
                     <div className="p-3 bg-amber-100 text-amber-800 rounded-xl shrink-0">
                         <Award className="w-6 h-6" />
@@ -167,9 +173,7 @@ export default function MilkAnalytics({ username, herdData }) {
                 </div>
             </div>
 
-            {/* Side-by-Side Dual Charts Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
-                {/* 7-Day Production Area Chart */}
                 <div className="bg-slate-50/50 border border-slate-200/80 rounded-2xl p-4 flex flex-col justify-between">
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="text-sm font-bold text-slate-800 flex items-center">
@@ -202,7 +206,6 @@ export default function MilkAnalytics({ username, herdData }) {
                     </div>
                 </div>
 
-                {/* Herd Contribution Donut + Cow Breakdown */}
                 <div className="bg-slate-50/50 border border-slate-200/80 rounded-2xl p-4 flex flex-col justify-between">
                     <div className="flex items-center justify-between mb-2">
                         <h3 className="text-sm font-bold text-slate-800 flex items-center">
@@ -239,7 +242,6 @@ export default function MilkAnalytics({ username, herdData }) {
                                 </ResponsiveContainer>
                             </div>
 
-                            {/* Clean Leaderboard List */}
                             <div className="w-full mt-2 space-y-1.5 max-h-36 overflow-y-auto pr-1">
                                 {data.contributions.map((c, idx) => {
                                     const pct = totalContribSum > 0 ? ((c.total / totalContribSum) * 100).toFixed(0) : 0;

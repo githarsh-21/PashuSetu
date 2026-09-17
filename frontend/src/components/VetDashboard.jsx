@@ -8,6 +8,7 @@ import API from '../services/api';
 import AIDiagnosisScanner from './AIDiagnosisScanner';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+import { pashuDb } from '../db/pashuDb'; // 📡 NEW: Import our local database
 
 // Forces Leaflet to recalculate container geometry across mobile reflows, tab switches, and orientations
 function MapResizeHandler() {
@@ -111,6 +112,27 @@ export default function VetDashboard({ user }) {
         }
     };
 
+    // 📡 NEW: Helper function to save offline via Dexie
+    const saveOfflineLocally = async (payload) => {
+        try {
+            await pashuDb.offline_clinical_logs.add({
+                ...payload,
+                sync_status: 'pending',
+                created_at: new Date().toISOString()
+            });
+            setStatusMsg('⚠️ No internet. Record saved locally and will auto-sync when network returns!');
+            setFormData(prev => ({
+                ...prev, diagnosis: '', treatment_notes: '', medicines_prescribed: '',
+                vaccine_name: '', vaccine_batch_no: '', vaccine_manufacturer: '', next_booster_date: ''
+            }));
+            setTimeout(() => setStatusMsg(''), 5000);
+        } catch (dbErr) {
+            console.error("Local DB Error:", dbErr);
+            alert("Failed to save offline. Please check storage permissions.");
+        }
+    };
+
+    // 📡 UPDATED: Offline-aware Submit Handler
     const handleSubmitRecord = async (e) => {
         e.preventDefault();
         if (!selectedFarmer) {
@@ -118,12 +140,20 @@ export default function VetDashboard({ user }) {
             return;
         }
 
+        const payload = {
+            vet_username: user?.username || 'dr_vet',
+            farmer_username: selectedFarmer,
+            ...formData
+        };
+
+        // 1. Check if browser is explicitly offline
+        if (!navigator.onLine) {
+            await saveOfflineLocally(payload);
+            return;
+        }
+
+        // 2. Try normal cloud save
         try {
-            const payload = {
-                vet_username: user?.username || 'dr_vet',
-                farmer_username: selectedFarmer,
-                ...formData
-            };
             const res = await API.post('/vet/clinical-log', payload);
 
             if (res.data.status === 'success') {
@@ -138,7 +168,9 @@ export default function VetDashboard({ user }) {
                 alert(t('alert_db_error', "Database Error: ") + res.data.message);
             }
         } catch (err) {
-            alert(t('alert_conn_error', "Failed to connect to server: ") + err.message);
+            // 3. Fallback to offline storage if network drops during fetch
+            console.warn('Online save failed, storing locally:', err);
+            await saveOfflineLocally(payload);
         }
     };
 
@@ -272,8 +304,8 @@ export default function VetDashboard({ user }) {
                         </h3>
 
                         {statusMsg && (
-                            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm rounded-xl font-medium flex items-center space-x-2">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <div className={`p-3 border text-xs sm:text-sm rounded-xl font-medium flex items-center space-x-2 ${statusMsg.includes('offline') || statusMsg.includes('⚠️') ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
+                                <CheckCircle2 className={`w-4 h-4 shrink-0 ${statusMsg.includes('offline') || statusMsg.includes('⚠️') ? 'text-amber-600' : 'text-emerald-600'}`} />
                                 <span>{statusMsg}</span>
                             </div>
                         )}

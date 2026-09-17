@@ -1,4 +1,6 @@
-const CACHE_NAME = 'pashusetu-cache-v2';
+const CACHE_NAME = 'pashusetu-cache-v3'; // Bumped to v3 to force an update
+
+// The core App Shell that must be cached immediately
 const PRECACHE_ASSETS = [
     '/',
     '/index.html',
@@ -12,7 +14,7 @@ const PRECACHE_ASSETS = [
 self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
-            console.log('[PashuSetu SW] Pre-caching offline shell assets');
+            console.log('[PashuSetu SW] Pre-caching offline shell assets v3');
             return cache.addAll(PRECACHE_ASSETS);
         }).then(() => self.skipWaiting())
     );
@@ -49,7 +51,8 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Never cache API calls (model inference, database queries)
+    // ⚠️ IMPORTANT: Never cache API calls in the Service Worker! 
+    // We handle offline API data explicitly using Dexie (pashuDb.js) instead.
     if (requestUrl.pathname.startsWith('/api/')) {
         return;
     }
@@ -64,7 +67,7 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Stale-While-Revalidate caching strategy for UI assets
+    // Stale-While-Revalidate caching strategy for UI assets (JS, CSS, Images)
     event.respondWith(
         caches.match(event.request).then((cachedResponse) => {
             const fetchPromise = fetch(event.request)
@@ -77,7 +80,10 @@ self.addEventListener('fetch', (event) => {
                     }
                     return networkResponse;
                 })
-                .catch(() => cachedResponse);
+                .catch(() => {
+                    // Optional: If an image fails to load offline, you could return a fallback local image here
+                    return cachedResponse;
+                });
 
             return cachedResponse || fetchPromise;
         })
